@@ -1,0 +1,6 @@
+{
+  "name": "PyMentor: Your AI Python Tutor",
+  "description": "PyMentor is an interactive web application for learning Python. It features structured lessons, code examples, and an AI assistant powered by Gemini API to explain concepts and answer questions.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
