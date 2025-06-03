@@ -1,7 +1,7 @@
 import React from 'react';
 import { PYTHON_ICON_SVG } from '../constants';
 import { useUserStore } from '../stores/useUserStore';
-import { signInWithGoogle, signOutUser } from '../services/authService';
+import { signInWithGoogle, signOut } from '../services/supabaseClient';
 
 interface HeaderProps {
   onToggleSidebar?: () => void;
@@ -21,15 +21,15 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, onGoToPlayground }) =>
     try {
       await signInWithGoogle();
     } catch (error) {
-      console.error('Login failed:', error);
+      console.error('Sign in error:', error);
     }
   };
 
   const handleLogout = async () => {
     try {
-      await signOutUser();
+      await signOut();
     } catch (error) {
-      console.error('Logout failed:', error);
+      console.error('Sign out error:', error);
     }
   };
 
