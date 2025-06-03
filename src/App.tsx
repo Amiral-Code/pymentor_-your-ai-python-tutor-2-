@@ -1,12 +1,25 @@
-// Update the imports at the top of the file
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import Header from './components/Header';
+import Footer from './components/Footer';
+import Sidebar from './components/Sidebar';
+import LessonContent from './components/LessonContent';
+import QuizRunner from './components/QuizRunner';
+import AIAssistantPanel from './components/AIAssistantPanel';
+import PlaygroundView from './components/PlaygroundView';
+import UpgradeModal from './components/UpgradeModal';
+import LoadingSpinner from './components/LoadingSpinner';
+import { PYTHON_LESSONS } from './constants';
+import { Topic, QuizQuestion, AIAssistantMode, LessonModule } from './types';
+import { initializePyodide, isPyodideReady, runPythonCode as executePython, PythonExecutionResult } from './services/PyodideService';
 import { 
-  initializeSupabaseConnection, 
   loadCompletedTopics, 
   saveCompletedTopics,
-  getUserProfile 
+  getUserProfile,
+  initializeSupabaseConnection
 } from './services/supabaseService';
+import { useThemeStore } from './contexts/ThemeContext';
+import { useUserStore } from './stores/useUserStore';
 
-// Replace initializeFirebaseConnection with initializeSupabaseConnection in useEffect
 useEffect(() => {
   initializeSupabaseConnection();
 
