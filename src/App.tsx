@@ -299,7 +299,7 @@ const App: React.FC = () => {
     if (appLoading || (userId && pyodideLoading && viewMode !== 'playground')) {
       return (
         <div className="flex items-center justify-center h-full bg-white">
-          <LoadingSpinner text="Loading PyMentor..." size="lg" />
+          <LoadingSpinner text="Loading PyMentor...\" size="lg" />
         </div>
       );
     }
