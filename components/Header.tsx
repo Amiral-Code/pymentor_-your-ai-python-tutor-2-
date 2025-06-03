@@ -18,13 +18,21 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, onGoToPlayground }) =>
   } = useUserStore();
 
   const handleLogin = async () => {
-    await signInWithGoogle();
-    // User state will be updated by onAuthStateChanged listener in firebaseService
+    try {
+      await signInWithGoogle();
+    } catch (error) {
+      console.error('Sign in error:', error);
+      alert('Failed to sign in. Please try again.');
+    }
   };
 
   const handleLogout = async () => {
-    await signOutUser();
-    // User state will be updated by onAuthStateChanged listener
+    try {
+      await signOutUser();
+    } catch (error) {
+      console.error('Sign out error:', error);
+      alert('Failed to sign out. Please try again.');
+    }
   };
 
   return (
@@ -66,7 +74,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar, onGoToPlayground }) =>
         )}
         {userId && (
             <button
-                onClick={togglePremium} // This is for dev testing, real premium would be managed differently
+                onClick={togglePremium}
                 className={`text-xs sm:text-sm font-medium px-2.5 py-1.5 rounded-md transition-colors focus:outline-none focus:ring-2 ${
                     isPremiumUser 
                     ? 'bg-yellow-500 hover:bg-yellow-600 text-white focus:ring-yellow-400'

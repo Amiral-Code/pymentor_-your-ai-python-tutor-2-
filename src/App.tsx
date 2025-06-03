@@ -12,10 +12,10 @@ import { PYTHON_LESSONS } from './constants';
 import { Topic, QuizQuestion, AIAssistantMode, LessonModule } from './types';
 import { initializePyodide, isPyodideReady, runPythonCode as executePython, PythonExecutionResult } from './services/PyodideService';
 import { 
-  initializeSupabaseConnection, 
+  initializeSupabase, 
   loadCompletedTopics, 
   saveCompletedTopics,
-  getUserProfile 
+  getUserProfile
 } from './services/supabaseService';
 import { useThemeStore } from './contexts/ThemeContext';
 import { useUserStore } from './stores/useUserStore';
@@ -63,7 +63,7 @@ const App: React.FC = () => {
   useThemeStore(); 
 
   useEffect(() => {
-    initializeSupabaseConnection();
+    initializeSupabase();
 
     const initPyodide = async () => {
       setPyodideLoading(true);
@@ -144,17 +144,265 @@ const App: React.FC = () => {
     const newCompleted = { ...completedTopics, [topicId]: true };
     setCompletedTopics(newCompleted);
     try {
-      await saveCompletedTopics(userId, newCompleted);
+      await saveCompletedTopics(userId, topicId);
     } catch (error) {
       console.error("Failed to save completed topics to Supabase:", error);
     }
   }, [userId, completedTopics]);
 
-  // Rest of the component remains unchanged
-  // ... (keep all the existing handlers and JSX)
+  const handleShowUpgradeModal = (featureName: string) => {
+    setUpgradeModalInfo({ featureName });
+  };
+
+  const handleSelectTopic = (moduleId: string, topicId: string, isPremiumLocked: boolean) => {
+    if (isPremiumLocked) {
+        const module = PYTHON_LESSONS.find(m => m.id === moduleId);
+        handleShowUpgradeModal(module?.title || 'this lesson');
+        return;
+    }
+
+    const module = PYTHON_LESSONS.find(m => m.id === moduleId);
+    const topic = module?.topics.find(t => t.id === topicId);
+    if (topic) {
+      setSelectedModuleId(moduleId);
+      setSelectedTopicId(topicId);
+      setCurrentTopic(topic);
+      setViewMode('lesson');
+      setCurrentQuiz(null);
+      setUpgradeModalInfo(null);
+    }
+  };
+
+  const handleStartQuiz = (quiz: QuizQuestion[]) => {
+    const moduleForCurrentTopic = PYTHON_LESSONS.find(m => m.id === selectedModuleId);
+    if (moduleForCurrentTopic?.isPremium && !isPremiumUser) {
+        handleShowUpgradeModal(`${currentTopic?.title} Quiz`);
+        return;
+    }
+    setCurrentQuiz(quiz);
+    setViewMode('quiz');
+    setUpgradeModalInfo(null);
+  };
+
+  const handleQuizComplete = (score: number, totalQuestions: number) => {
+    if (currentTopic && totalQuestions > 0 && (score / totalQuestions) >= 0.7) {
+      markTopicAsCompleted(currentTopic.id);
+    }
+    setViewMode('lesson');
+    setCurrentQuiz(null);
+  };
+  
+  const requestAIErrorExplanation = (code: string, error: string) => {
+    const userCanUseAi = useUserStore.getState().canUseAi();
+    if (!userCanUseAi) {
+        handleShowUpgradeModal("Unlimited AI Assistant Queries");
+        return;
+    }
+    if (!isPremiumUser) {
+        useUserStore.getState().incrementAiQueryCount();
+    }
+
+    const messageToAI = `Please explain this Python error:\n\nError Output:\n\`\`\`\n${error}\n\`\`\`\n\nFrom this code:\n\`\`\`python\n${code}\n\`\`\``;
+    if (aiPanelRef.current?.setInitialMessage) {
+      aiPanelRef.current.setInitialMessage(messageToAI, AIAssistantMode.EXPLAIN_CODE);
+    } else {
+        navigator.clipboard.writeText(messageToAI)
+        .then(() => alert("Error details and code copied to clipboard. Please paste it into the AI Assistant."))
+        .catch(() => alert("Could not copy to clipboard. Please manually copy the error and code."));
+    }
+  };
+
+  const handleGoToPlayground = () => {
+    setViewMode('playground');
+    setCurrentQuiz(null);
+    setUpgradeModalInfo(null); 
+  };
+
+  const toggleSidebar = () => {
+    setIsSidebarOpen(prev => !prev);
+  };
+
+  const handleMouseDownOnResizeBar = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isResizing || !appContainerRef.current) return;
+    
+    const appRect = appContainerRef.current.getBoundingClientRect();
+    let newWidth = appRect.right - e.clientX;
+
+    const mainContentElement = appContainerRef.current.querySelector('main > div > article, main > div > div[class*="QuizRunner"], main > div > div[class*="PlaygroundView"]');
+    const minMainContentWidth = 300; 
+    
+    if (mainContentElement) {
+        const sidebarWidth = isSidebarOpen ? (appContainerRef.current.querySelector('aside:not([style*="width:0px"])')?.getBoundingClientRect().width || 0) : 0;
+        const availableSpace = appContainerRef.current.offsetWidth - sidebarWidth;
+        
+        if (availableSpace - newWidth < minMainContentWidth) {
+            newWidth = availableSpace - minMainContentWidth;
+        }
+    }
+
+    if (newWidth < MIN_AI_PANEL_WIDTH) {
+      newWidth = MIN_AI_PANEL_WIDTH;
+    }
+    const maxPanelWidth = appContainerRef.current.offsetWidth * 0.7; 
+    if (newWidth > maxPanelWidth) {
+        newWidth = maxPanelWidth;
+    }
+
+    setAiPanelWidth(newWidth);
+  }, [isResizing, isSidebarOpen]);
+
+  const handleMouseUp = useCallback(() => {
+    if (isResizing) {
+      setIsResizing(false);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('aiPanelWidth', aiPanelWidth.toString());
+      }
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  }, [isResizing, aiPanelWidth]);
+
+  useEffect(() => {
+    if (isResizing) {
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, handleMouseMove, handleMouseUp]);
+
+  const runPythonCode = async (code: string): Promise<PythonExecutionResult> => {
+    if (!pyodideReady) {
+      return { stdout: "", stderr: "Python runtime not available.", error: "Python runtime not available." };
+    }
+    return executePython(code);
+  };
+
+  const renderMainContent = () => {
+    if (appLoading || (userId && pyodideLoading && viewMode !== 'playground')) {
+      return (
+        <div className="flex items-center justify-center h-full bg-white">
+          <LoadingSpinner text="Loading PyMentor..." size="lg" />
+        </div>
+      );
+    }
+
+    const moduleForCurrentTopic = PYTHON_LESSONS.find(m => m.id === selectedModuleId);
+    const isCurrentTopicPremium = moduleForCurrentTopic?.isPremium;
+
+    if (viewMode === 'lesson' && isCurrentTopicPremium && !isPremiumUser && currentTopic) {
+         if (!upgradeModalInfo) { 
+            handleShowUpgradeModal(currentTopic.title);
+         }
+    }
+
+    if (viewMode === 'quiz' && currentQuiz && currentTopic) {
+        if (isCurrentTopicPremium && !isPremiumUser) {
+             if (!upgradeModalInfo) {
+                handleShowUpgradeModal(`${currentTopic.title} Quiz`);
+            }
+            return <LessonContent 
+                topic={currentTopic} 
+                onStartQuiz={handleStartQuiz} 
+                pyodideReady={pyodideReady}
+                runPython={runPythonCode}
+                pyodideLoading={pyodideLoading}
+                onRequestAIErrorExplanation={requestAIErrorExplanation}
+              />;
+        }
+      return <QuizRunner quizTitle={currentTopic.title + " Quiz"} questions={currentQuiz} onQuizComplete={handleQuizComplete} />;
+    }
+    if (viewMode === 'playground') {
+      return <PlaygroundView 
+                runPython={runPythonCode} 
+                pyodideReady={pyodideReady} 
+                pyodideLoading={pyodideLoading} 
+                onRequestAIErrorExplanation={requestAIErrorExplanation}
+             />;
+    }
+    return (
+      <LessonContent 
+        topic={currentTopic} 
+        onStartQuiz={handleStartQuiz} 
+        pyodideReady={pyodideReady}
+        runPython={runPythonCode}
+        pyodideLoading={pyodideLoading}
+        onRequestAIErrorExplanation={requestAIErrorExplanation}
+      />
+    );
+  };
+  
+  const sidebarStyle: React.CSSProperties = isSidebarOpen 
+  ? { transition: 'width 0.3s ease-in-out, padding 0.3s ease-in-out', width: '18rem' } 
+  : { transition: 'width 0.3s ease-in-out, padding 0.3s ease-in-out', width: '0px', padding: '0', overflow: 'hidden' };
 
   return (
-    // ... (keep the existing JSX)
+    <div ref={appContainerRef} className="flex flex-col min-h-screen bg-slate-100">
+      <Header onToggleSidebar={toggleSidebar} onGoToPlayground={handleGoToPlayground} />
+      <div className="flex flex-1 overflow-hidden">
+        <div style={sidebarStyle} className="flex-shrink-0 h-full">
+            {isSidebarOpen &&
+                <Sidebar
+                    modules={PYTHON_LESSONS}
+                    selectedTopicId={selectedTopicId}
+                    onSelectTopic={handleSelectTopic}
+                    completedTopics={completedTopics}
+                />
+            }
+        </div>
+
+        <main className="flex-1 p-0 overflow-y-auto bg-slate-200">
+          <div className="h-full"> 
+            {renderMainContent()}
+          </div>
+        </main>
+
+        <div 
+          onMouseDown={handleMouseDownOnResizeBar}
+          className="w-1.5 bg-slate-300 hover:bg-blue-500 cursor-col-resize flex-shrink-0 transition-colors duration-150"
+          title="Resize AI Panel"
+        ></div>
+
+        <AIAssistantPanel 
+          ref={aiPanelRef}
+          style={{ width: `${aiPanelWidth}px`, minWidth: `${MIN_AI_PANEL_WIDTH}px` }} 
+          currentTopicTitle={currentTopic?.title}
+          onUpgradeNeeded={handleShowUpgradeModal}
+        />
+      </div>
+      <Footer />
+      {upgradeModalInfo && (
+        <UpgradeModal 
+            featureName={upgradeModalInfo.featureName}
+            onClose={() => setUpgradeModalInfo(null)}
+            onUpgrade={async () => {
+                if (!userId) {
+                    alert("Please sign in to upgrade to Premium.");
+                } else {
+                    await togglePremium(); 
+                }
+                setUpgradeModalInfo(null);
+            }}
+        />
+      )}
+    </div>
   );
 };
 
