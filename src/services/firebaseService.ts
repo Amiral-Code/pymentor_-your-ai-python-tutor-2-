@@ -1,0 +1,1 @@
+// This file is now deprecated. Use supabaseService.ts instead.
