@@ -14,26 +14,148 @@ import { initializePyodide, isPyodideReady, runPythonCode as executePython, Pyth
 import { 
   initializeSupabaseConnection, 
   loadCompletedTopics, 
-  saveCompletedTopic,
+  saveCompletedTopics,
   getUserProfile 
-} from "./services/supabaseService";
+} from './services/supabaseService';
 import { useThemeStore } from './contexts/ThemeContext';
 import { useUserStore } from './stores/useUserStore';
 
-// Rest of the file remains unchanged until markTopicAsCompleted function
+type ViewMode = 'lesson' | 'quiz' | 'playground';
 
-const markTopicAsCompleted = useCallback(async (topicId: string) => {
-  if (!userId) {
-    console.log("User not logged in. Topic completion not saved.");
-    setCompletedTopics(prev => ({ ...prev, [topicId]: true }));
-    return;
-  }
-  try {
-    await saveCompletedTopic(userId, topicId);
-    setCompletedTopics(prev => ({ ...prev, [topicId]: true }));
-  } catch (error) {
-    console.error("Failed to save completed topic to Supabase:", error);
-  }
-}, [userId]);
+const MIN_AI_PANEL_WIDTH = 280; 
+const DEFAULT_AI_PANEL_WIDTH = 384;
 
-// Rest of the file remains unchanged
+const App: React.FC = () => {
+  const { 
+    userId, 
+    isPremiumUser, 
+    togglePremium, 
+    setUserDataFromSupabase 
+  } = useUserStore();
+
+  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
+  const [currentTopic, setCurrentTopic] = useState<Topic | null>(null);
+  const [currentQuiz, setCurrentQuiz] = useState<QuizQuestion[] | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('lesson');
+
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  const [aiPanelWidth, setAiPanelWidth] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const savedWidth = localStorage.getItem('aiPanelWidth');
+      return savedWidth ? parseInt(savedWidth, 10) : DEFAULT_AI_PANEL_WIDTH;
+    }
+    return DEFAULT_AI_PANEL_WIDTH;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const appContainerRef = useRef<HTMLDivElement>(null);
+  const aiPanelRef = useRef<{ setInitialMessage: (message: string, mode?: AIAssistantMode) => void }>(null);
+
+  const [pyodideLoading, setPyodideLoading] = useState(true);
+  const [pyodideReady, setPyodideReady] = useState(false);
+  const [appLoading, setAppLoading] = useState(true);
+
+  const [completedTopics, setCompletedTopics] = useState<Record<string, boolean>>({});
+  
+  const [upgradeModalInfo, setUpgradeModalInfo] = useState<{ featureName: string } | null>(null);
+
+  useThemeStore(); 
+
+  useEffect(() => {
+    initializeSupabaseConnection();
+
+    const initPyodide = async () => {
+      setPyodideLoading(true);
+      try {
+        await initializePyodide();
+        setPyodideReady(isPyodideReady());
+      } catch (error) {
+        console.error("App.tsx: Failed to initialize Pyodide", error);
+        setPyodideReady(false);
+      } finally {
+        setPyodideLoading(false);
+      }
+    };
+    initPyodide();
+  }, []);
+  
+  useEffect(() => {
+    const loadInitialData = async () => {
+      setAppLoading(true);
+      if (userId) {
+        console.log("App.tsx: User logged in, fetching data for", userId);
+        try {
+          const [userProfile, topics] = await Promise.all([
+            getUserProfile(userId),
+            loadCompletedTopics(userId)
+          ]);
+
+          if (userProfile) {
+            setUserDataFromSupabase({
+              isPremiumUser: userProfile.is_premium_user,
+              aiQueryCount: userProfile.ai_query_count,
+              lastAiQueryDate: userProfile.last_ai_query_date
+            });
+          }
+          setCompletedTopics(topics);
+          console.log("App.tsx: User data and completed topics loaded.");
+        } catch (error) {
+          console.error("App.tsx: Error loading user data from Supabase:", error);
+          setCompletedTopics({});
+        }
+      } else {
+        console.log("App.tsx: User logged out or no user, resetting local data.");
+        setCompletedTopics({});
+      }
+
+      let initialModule: LessonModule | undefined = PYTHON_LESSONS[0];
+      let initialTopic: Topic | undefined = initialModule?.topics[0];
+
+      const currentIsPremiumUser = useUserStore.getState().isPremiumUser; 
+
+      if (initialModule?.isPremium && !currentIsPremiumUser) {
+          initialModule = PYTHON_LESSONS.find(m => !m.isPremium);
+          initialTopic = initialModule?.topics[0];
+      }
+      
+      if (initialModule && initialTopic) {
+          setSelectedModuleId(initialModule.id);
+          setSelectedTopicId(initialTopic.id);
+          setCurrentTopic(initialTopic);
+          setViewMode('lesson');
+      } else {
+        setCurrentTopic(null); 
+        setSelectedModuleId(null);
+        setSelectedTopicId(null);
+      }
+      setAppLoading(false);
+    };
+
+    loadInitialData();
+  }, [userId, setUserDataFromSupabase]);
+
+  const markTopicAsCompleted = useCallback(async (topicId: string) => {
+    if (!userId) {
+      console.log("User not logged in. Topic completion not saved to cloud.");
+      setCompletedTopics(prev => ({ ...prev, [topicId]: true }));
+      return;
+    }
+    const newCompleted = { ...completedTopics, [topicId]: true };
+    setCompletedTopics(newCompleted);
+    try {
+      await saveCompletedTopics(userId, newCompleted);
+    } catch (error) {
+      console.error("Failed to save completed topics to Supabase:", error);
+    }
+  }, [userId, completedTopics]);
+
+  // Rest of the component remains unchanged
+  // ... (keep all the existing handlers and JSX)
+
+  return (
+    // ... (keep the existing JSX)
+  );
+};
+
+export default App;
