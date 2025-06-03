@@ -11,7 +11,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Auth functions
 export const signInWithGoogle = async () => {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -19,84 +18,30 @@ export const signInWithGoogle = async () => {
       redirectTo: window.location.origin
     }
   });
-  if (error) throw error;
+  
+  if (error) {
+    console.error("Error signing in with Google:", error);
+    throw error;
+  }
+  
   return data;
 };
 
 export const signOutUser = async () => {
   const { error } = await supabase.auth.signOut();
-  if (error) throw error;
-};
-
-export const initializeSupabaseConnection = () => {
-  supabase.auth.onAuthStateChange(async (event, session) => {
-    if (session?.user) {
-      const { id: uid, email, user_metadata } = session.user;
-      const displayName = user_metadata?.full_name;
-      const photoURL = user_metadata?.avatar_url;
-      
-      try {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', uid)
-          .single();
-
-        useUserStore.getState().setUser(
-          uid,
-          displayName || null,
-          email || null,
-          photoURL || null,
-          profile?.is_premium_user || false,
-          profile?.ai_query_count || 0,
-          profile?.last_ai_query_date || null
-        );
-      } catch (error) {
-        console.error('Error fetching user profile:', error);
-      }
-    } else {
-      useUserStore.getState().clearUser();
-    }
-  });
-};
-
-// Profile management
-export const ensureUserProfile = async (userId: string) => {
-  const { data: profile, error: getError } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single();
-
-  if (getError && getError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
-    throw getError;
+  if (error) {
+    console.error("Error signing out:", error);
+    throw error;
   }
-
-  if (!profile) {
-    const { data: newProfile, error: insertError } = await supabase
-      .from('profiles')
-      .insert([{ id: userId }])
-      .select()
-      .single();
-
-    if (insertError) throw insertError;
-    return newProfile;
-  }
-
-  return profile;
 };
 
-export const updateUserProfile = async (userId: string, updates: {
-  is_premium_user?: boolean;
-  ai_query_count?: number;
-  last_ai_query_date?: string;
-}) => {
-  const { error } = await supabase
-    .from('profiles')
-    .update(updates)
-    .eq('id', userId);
-
-  if (error) throw error;
+export const getCurrentUser = async () => {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error) {
+    console.error("Error getting current user:", error);
+    return null;
+  }
+  return user;
 };
 
 export const getUserProfile = async (userId: string) => {
@@ -106,28 +51,50 @@ export const getUserProfile = async (userId: string) => {
     .eq('id', userId)
     .single();
 
-  if (error) throw error;
+  if (error) {
+    console.error("Error fetching user profile:", error);
+    return null;
+  }
+
   return data;
 };
 
-// Completed topics management
-export const saveCompletedTopics = async (userId: string, topicId: string) => {
+export const updateUserProfile = async (userId: string, updates: any) => {
   const { error } = await supabase
-    .from('user_completed_topics')
-    .insert([{ user_id: userId, topic_id: topicId }]);
+    .from('profiles')
+    .update(updates)
+    .eq('id', userId);
 
-  if (error && error.code !== '23505') { // Ignore unique violation
+  if (error) {
+    console.error("Error updating user profile:", error);
     throw error;
   }
 };
 
-export const loadCompletedTopics = async (userId: string) => {
+export const saveCompletedTopics = async (userId: string, topicId: string) => {
+  const { error } = await supabase
+    .from('user_completed_topics')
+    .insert({
+      user_id: userId,
+      topic_id: topicId,
+    });
+
+  if (error && error.code !== '23505') { // Ignore unique violation
+    console.error("Error saving completed topic:", error);
+    throw error;
+  }
+};
+
+export const loadCompletedTopics = async (userId: string): Promise<Record<string, boolean>> => {
   const { data, error } = await supabase
     .from('user_completed_topics')
     .select('topic_id')
     .eq('user_id', userId);
 
-  if (error) throw error;
+  if (error) {
+    console.error("Error loading completed topics:", error);
+    return {};
+  }
 
   return data.reduce((acc: Record<string, boolean>, topic) => {
     acc[topic.topic_id] = true;
@@ -135,19 +102,22 @@ export const loadCompletedTopics = async (userId: string) => {
   }, {});
 };
 
-// Playground snippets management
 export const savePlaygroundSnippet = async (userId: string, snippet: Omit<SavedSnippet, 'id'>): Promise<SavedSnippet> => {
   const { data, error } = await supabase
     .from('user_snippets')
-    .insert([{
+    .insert({
       user_id: userId,
       name: snippet.name,
       code: snippet.code,
-    }])
+    })
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    console.error("Error saving playground snippet:", error);
+    throw error;
+  }
+
   return {
     id: data.id,
     name: data.name,
@@ -163,7 +133,10 @@ export const loadPlaygroundSnippets = async (userId: string): Promise<SavedSnipp
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
-  if (error) throw error;
+  if (error) {
+    console.error("Error loading playground snippets:", error);
+    return [];
+  }
 
   return data.map(snippet => ({
     id: snippet.id,
@@ -173,19 +146,38 @@ export const loadPlaygroundSnippets = async (userId: string): Promise<SavedSnipp
   }));
 };
 
-export const deletePlaygroundSnippet = async (userId: string, snippetId: string) => {
+export const deletePlaygroundSnippet = async (userId: string, snippetId: string): Promise<void> => {
   const { error } = await supabase
     .from('user_snippets')
     .delete()
     .eq('id', snippetId)
     .eq('user_id', userId);
 
-  if (error) throw error;
+  if (error) {
+    console.error("Error deleting playground snippet:", error);
+    throw error;
+  }
 };
 
-// Auth state change subscription
-export const onAuthStateChange = (callback: (user: any) => void) => {
-  return supabase.auth.onAuthStateChange((event, session) => {
-    callback(session?.user || null);
+export const initializeSupabase = () => {
+  supabase.auth.onAuthStateChange((event, session) => {
+    const user = session?.user;
+    if (user) {
+      console.log("Supabase Auth: User signed in - ", user.id);
+      getUserProfile(user.id).then(profile => {
+        useUserStore.getState().setUser(
+          user.id,
+          user.user_metadata?.full_name || null,
+          user.email,
+          user.user_metadata?.avatar_url || null,
+          profile?.is_premium_user || false,
+          profile?.ai_query_count || 0,
+          profile?.last_ai_query_date || null
+        );
+      });
+    } else {
+      console.log("Supabase Auth: User signed out.");
+      useUserStore.getState().clearUser();
+    }
   });
 };
