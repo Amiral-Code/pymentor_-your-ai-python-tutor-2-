@@ -9,8 +9,7 @@ import { PythonExecutionResult } from '../services/PyodideService';
 import LoadingSpinner from './LoadingSpinner';
 import { SavedSnippet } from '../types';
 import { useUserStore } from '../stores/useUserStore';
-import { savePlaygroundSnippet, loadPlaygroundSnippets, deletePlaygroundSnippet } from '../services/firebaseService';
-
+import { savePlaygroundSnippet, loadPlaygroundSnippets, deletePlaygroundSnippet } from '../services/supabaseService';
 
 interface PlaygroundViewProps {
   pyodideReady: boolean;
@@ -37,9 +36,8 @@ const PlaygroundView: React.FC<PlaygroundViewProps> = ({
   const [snippetName, setSnippetName] = useState('');
   const [showSaveUI, setShowSaveUI] = useState(false);
   
-  const { userId } = useUserStore(); // Get current user ID
+  const { userId } = useUserStore();
 
-  // Load snippets from Firestore when component mounts or user logs in
   useEffect(() => {
     const fetchSnippets = async () => {
       if (userId) {
@@ -48,15 +46,13 @@ const PlaygroundView: React.FC<PlaygroundViewProps> = ({
           setSavedSnippets(snippetsFromDb);
         } catch (error) {
           console.error("Failed to load snippets:", error);
-          // setSavedSnippets([]); // Or keep existing local ones if any, or show error
         }
       } else {
-        setSavedSnippets([]); // Clear snippets if user logs out
+        setSavedSnippets([]);
       }
     };
     fetchSnippets();
   }, [userId]);
-
 
   useEffect(() => {
     if (editorContainerRef.current && !editorViewRef.current) {
@@ -194,7 +190,6 @@ const PlaygroundView: React.FC<PlaygroundViewProps> = ({
     }
   };
 
-
   return (
     <div className="p-4 md:p-6 bg-white shadow-sm h-full flex flex-col overflow-hidden">
       <header className="pb-3 border-b border-slate-200 mb-4">
@@ -227,7 +222,7 @@ const PlaygroundView: React.FC<PlaygroundViewProps> = ({
                     className="text-xs py-1.5 px-3 border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white text-slate-700"
                 >
                     <option value="" disabled>Load a saved snippet...</option>
-                    {savedSnippets.map(s => ( // Already sorted by timestamp from Firestore query
+                    {savedSnippets.map(s => (
                         <option key={s.id} value={s.id}>{s.name} ({new Date(s.timestamp).toLocaleTimeString()})</option>
                     ))}
                 </select>
@@ -252,13 +247,10 @@ const PlaygroundView: React.FC<PlaygroundViewProps> = ({
             </div>
         )}
 
-
-        {/* CodeMirror Editor Container */}
         <div 
             className="mb-4 flex-grow min-h-[200px] h-[40vh] max-h-[50vh] code-editor-container" 
             ref={editorContainerRef}
         >
-          {/* CodeMirror Editor will be initialized here */}
         </div>
 
         <div className="mb-4 flex items-center space-x-3">
@@ -318,14 +310,14 @@ const PlaygroundView: React.FC<PlaygroundViewProps> = ({
         )}
 
         {output && (
-          <div className="flex-1 flex flex-col border border-slate-300 rounded-md bg-slate-800 min-h-0"> {/* Output bg changed for light text */}
+          <div className="flex-1 flex flex-col border border-slate-300 rounded-md bg-slate-800 min-h-0">
             <div className="flex justify-between items-center p-2 bg-slate-100 border-b border-slate-300">
                 <h5 className="text-sm font-semibold text-slate-700">Output:</h5>
             </div>
-            <pre className="text-sm whitespace-pre-wrap overflow-auto flex-1 p-3 custom-scrollbar text-slate-100"> {/* Output text is light on dark bg */}
-              {output.stdout && <span className="text-green-400">{output.stdout}</span>} {/* Adjusted for dark bg */}
+            <pre className="text-sm whitespace-pre-wrap overflow-auto flex-1 p-3 custom-scrollbar text-slate-100">
+              {output.stdout && <span className="text-green-400">{output.stdout}</span>}
               {output.stdout && output.stderr && <hr className="my-1 border-slate-700 opacity-50" />}
-              {output.stderr && <span className="text-red-400">{output.stderr}</span>} {/* Adjusted for dark bg */}
+              {output.stderr && <span className="text-red-400">{output.stderr}</span>}
               {(!output.stdout && !output.stderr && !output.error) && <span className="text-slate-400">(No output produced)</span>}
               {(!output.stderr && output.error) && <span className="text-red-400">{output.error}</span>}
             </pre>
