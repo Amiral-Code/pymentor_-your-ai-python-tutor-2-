@@ -1,5 +1,5 @@
 {
-  "name": "pymentor:-your-ai-python-tutor",
+  "name": "pymentor-your-ai-python-tutor",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -15,17 +15,12 @@
     "react-markdown": "^9.0.0",
     "remark-gfm": "^4.0.0",
     "zustand": "^4.5.0",
-    "zustand/middleware": "^4.5.0",
     "highlight.js": "11.9.0",
     "@codemirror/state": "6.4.1",
-    "@codemirror/view": "6.28.0?external=@codemirror",
-    "@codemirror/commands": "6.6.0?external=@codemirror",
-    "@codemirror/language": "6.10.2?external=@codemirror",
-    "@codemirror/lang-python": "6.1.6?external=@codemirror",
-    "firebase/app": "^11.8.1",
-    "firebase/auth": "^11.8.1",
-    "firebase/firestore": "^11.8.1",
-    "firebase/analytics": "^11.8.1",
+    "@codemirror/view": "6.28.0",
+    "@codemirror/commands": "6.6.0",
+    "@codemirror/language": "6.10.2",
+    "@codemirror/lang-python": "6.1.6",
     "firebase": "^11.8.1"
   },
   "devDependencies": {
