@@ -7,16 +7,16 @@ import QuizRunner from './components/QuizRunner';
 import AIAssistantPanel from './components/AIAssistantPanel';
 import PlaygroundView from './components/PlaygroundView';
 import UpgradeModal from './components/UpgradeModal';
-import LoadingSpinner from './components/LoadingSpinner'; // Import LoadingSpinner
+import LoadingSpinner from './components/LoadingSpinner';
 import { PYTHON_LESSONS } from './constants';
 import { Topic, QuizQuestion, AIAssistantMode, LessonModule } from './types';
 import { initializePyodide, isPyodideReady, runPythonCode as executePython, PythonExecutionResult } from './services/PyodideService';
 import { 
-  initializeFirebaseConnection, 
+  initializeSupabase, 
   loadCompletedTopics, 
   saveCompletedTopics,
-  getUserProfile // To load initial settings
-} from './services/firebaseService';
+  getUserProfile
+} from './services/supabaseService';
 import { useThemeStore } from './contexts/ThemeContext';
 import { useUserStore } from './stores/useUserStore';
 
@@ -55,7 +55,7 @@ const App: React.FC = () => {
 
   const [pyodideLoading, setPyodideLoading] = useState(true);
   const [pyodideReady, setPyodideReady] = useState(false);
-  const [appLoading, setAppLoading] = useState(true); // For initial Firebase auth check
+  const [appLoading, setAppLoading] = useState(true);
 
   const [completedTopics, setCompletedTopics] = useState<Record<string, boolean>>({});
   
@@ -63,9 +63,8 @@ const App: React.FC = () => {
 
   useThemeStore(); 
 
-  // Initialize Firebase and Pyodide
   useEffect(() => {
-    initializeFirebaseConnection(); // This sets up onAuthStateChanged listener
+    initializeSupabase();
 
     const initPyodide = async () => {
       setPyodideLoading(true);
@@ -75,7 +74,6 @@ const App: React.FC = () => {
       } catch (error) {
         console.error("App.tsx: Failed to initialize Pyodide", error);
         setPyodideReady(false);
-        // alert("Interactive Python playground could not be loaded. Code snippets and playground will not be runnable.");
       } finally {
         setPyodideLoading(false);
       }
@@ -83,10 +81,9 @@ const App: React.FC = () => {
     initPyodide();
   }, []);
   
-  // Effect for when user logs in or out
   useEffect(() => {
     const loadInitialData = async () => {
-      setAppLoading(true); // Start loading
+      setAppLoading(true);
       if (userId) {
         console.log("App.tsx: User logged in, fetching data for", userId);
         try {
@@ -96,7 +93,7 @@ const App: React.FC = () => {
           ]);
 
           if (userProfile) {
-            setUserDataFromFirestore({ // Update Zustand store with Firestore data
+            setUserDataFromFirestore({
               isPremiumUser: userProfile.isPremiumUser,
               aiQueryCount: userProfile.aiQueryCount,
               lastAiQueryDate: userProfile.lastAiQueryDate
@@ -106,19 +103,16 @@ const App: React.FC = () => {
           console.log("App.tsx: User data and completed topics loaded.");
         } catch (error) {
           console.error("App.tsx: Error loading user data from Firestore:", error);
-          setCompletedTopics({}); // Reset on error
+          setCompletedTopics({});
         }
       } else {
         console.log("App.tsx: User logged out or no user, resetting local data.");
-        setCompletedTopics({}); // Clear completed topics if no user
-        // User store is cleared by onAuthStateChanged in firebaseService
+        setCompletedTopics({});
       }
 
-      // Set initial topic regardless of login state, but respect premium status
       let initialModule: LessonModule | undefined = PYTHON_LESSONS[0];
       let initialTopic: Topic | undefined = initialModule?.topics[0];
 
-      // Check premium status from userStore, which should be updated by now if user is logged in
       const currentIsPremiumUser = useUserStore.getState().isPremiumUser; 
 
       if (initialModule?.isPremium && !currentIsPremiumUser) {
@@ -132,23 +126,20 @@ const App: React.FC = () => {
           setCurrentTopic(initialTopic);
           setViewMode('lesson');
       } else {
-        // Handle case where no suitable initial topic is found (e.g., all lessons are premium and user is free)
         setCurrentTopic(null); 
         setSelectedModuleId(null);
         setSelectedTopicId(null);
       }
-      setAppLoading(false); // Finish loading
+      setAppLoading(false);
     };
 
     loadInitialData();
-  }, [userId, setUserDataFromFirestore]); // Rerun when userId changes
+  }, [userId, setUserDataFromFirestore]);
 
   const markTopicAsCompleted = useCallback(async (topicId: string) => {
     if (!userId) {
-      // Optionally, still mark as completed in local state for non-logged-in users for current session
-      // but it won't persist. Or, prompt to log in.
       console.log("User not logged in. Topic completion not saved to cloud.");
-      setCompletedTopics(prev => ({ ...prev, [topicId]: true })); // Local update only for UI feedback
+      setCompletedTopics(prev => ({ ...prev, [topicId]: true }));
       return;
     }
     const newCompleted = { ...completedTopics, [topicId]: true };
@@ -157,7 +148,6 @@ const App: React.FC = () => {
       await saveCompletedTopics(userId, newCompleted);
     } catch (error) {
       console.error("Failed to save completed topics to Firestore:", error);
-      // Optionally revert local state or show error
     }
   }, [userId, completedTopics]);
 
@@ -166,7 +156,7 @@ const App: React.FC = () => {
   };
 
   const handleSelectTopic = (moduleId: string, topicId: string, isPremiumLocked: boolean) => {
-    if (isPremiumLocked) { // isPremiumLocked is based on module.isPremium && !userStore.isPremiumUser
+    if (isPremiumLocked) {
         const module = PYTHON_LESSONS.find(m => m.id === moduleId);
         handleShowUpgradeModal(module?.title || 'this lesson');
         return;
@@ -206,10 +196,9 @@ const App: React.FC = () => {
   const requestAIErrorExplanation = (code: string, error: string) => {
     const userCanUseAi = useUserStore.getState().canUseAi();
     if (!userCanUseAi) {
-        handleShowUpgradeModal("Unlimited AI Assistant Queries"); // Or specific "AI Error Explanation"
+        handleShowUpgradeModal("Unlimited AI Assistant Queries");
         return;
     }
-    // Increment AI query count if it's a free user
     if (!isPremiumUser) {
         useUserStore.getState().incrementAiQueryCount();
     }
@@ -308,10 +297,10 @@ const App: React.FC = () => {
   };
 
   const renderMainContent = () => {
-    if (appLoading || (userId && pyodideLoading && viewMode !== 'playground')) { // Show loading unless in playground where it has its own loader
+    if (appLoading || (userId && pyodideLoading && viewMode !== 'playground')) {
       return (
         <div className="flex items-center justify-center h-full bg-white">
-          <LoadingSpinner text="Loading PyMentor..." size="lg" />
+          <LoadingSpinner text="Loading PyMentor...\" size="lg" />
         </div>
       );
     }
@@ -324,7 +313,6 @@ const App: React.FC = () => {
             handleShowUpgradeModal(currentTopic.title);
          }
     }
-
 
     if (viewMode === 'quiz' && currentQuiz && currentTopic) {
         if (isCurrentTopicPremium && !isPremiumUser) {
@@ -406,7 +394,7 @@ const App: React.FC = () => {
         <UpgradeModal 
             featureName={upgradeModalInfo.featureName}
             onClose={() => setUpgradeModalInfo(null)}
-            onUpgrade={async () => { // togglePremium is now async as it updates Firestore
+            onUpgrade={async () => {
                 if (!userId) {
                     alert("Please sign in to upgrade to Premium.");
                 } else {

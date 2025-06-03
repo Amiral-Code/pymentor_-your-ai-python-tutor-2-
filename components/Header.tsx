@@ -1,7 +1,7 @@
 import React from 'react';
 import { PYTHON_ICON_SVG } from '../constants';
 import { useUserStore } from '../stores/useUserStore';
-import { signInWithGoogle, signOutUser } from '../services/firebaseService';
+import { signInWithGoogle, signOutUser } from '../services/supabaseService';
 
 interface HeaderProps {
   onToggleSidebar?: () => void;
